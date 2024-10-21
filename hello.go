@@ -1,10 +1,11 @@
 package main
 
 import (
-	"fmt"
-	"github.com/gdamore/tcell/v2"
 	"log"
 	"os"
+	"time"
+
+	"github.com/gdamore/tcell/v2"
 )
 
 type Pair struct {
@@ -65,6 +66,29 @@ func (self Pair) subPair(other Pair) Pair {
 	return r
 }
 
+type Rule struct{}
+
+func (r Rule) modify(w World) World {
+	newWorld := w
+
+	for index, cell := range w.Cells {
+		aliveDeath := cell.getNeighbours(w)
+		// Dies if less than Two living nei
+		if aliveDeath.X < 2 {
+			newWorld.Cells[index].IsAlive = false
+
+		} else if aliveDeath.X <= 3 {
+			newWorld.Cells[index].IsAlive = true
+
+		} else if aliveDeath.X > 3 {
+			newWorld.Cells[index].IsAlive = false
+		} else if aliveDeath.X == 3 {
+			newWorld.Cells[index].IsAlive = true
+		}
+	}
+	return newWorld
+}
+
 type Cell struct {
 	WorldPosition Pair
 	IsAlive       bool
@@ -74,44 +98,29 @@ func (c Cell) getNeighbours(w World) Pair {
 
 	pos := c.WorldPosition
 	var neighbours = [8]Pair{
-		pos.subPair(Pair{1, 1}),
-		pos.subPair(Pair{0, 1}),
-		pos.subPair(Pair{1, 0}),
-		pos.subPair(Pair{0, -1}),
-		pos.addPair(Pair{1, 1}),
-		pos.addPair(Pair{0, 1}),
-		pos.addPair(Pair{1, 0}),
+		pos.addPair(Pair{-1, -1}),
 		pos.addPair(Pair{0, -1}),
+		pos.addPair(Pair{+1, -1}),
+		pos.addPair(Pair{+1, 0}),
+		pos.addPair(Pair{+1, +1}),
+		pos.addPair(Pair{0, +1}),
+		pos.addPair(Pair{-1, +1}),
+		pos.addPair(Pair{-1, 0}),
 	}
 
 	aliveCount := Pair{}
-	log.Println("For current Pos:")
-	log.Println(pos)
 	for _, e := range neighbours {
-		index := Convert2d1d(e)
-		if index < MAP_SIZE_X && index >= 0 {
-			log.Println("nei pos")
-			log.Println(e)
-			log.Println(index)
+		index := w.Convert2d1d(e)
+		if index >= 0 && index < len(w.Cells) {
 			if w.Cells[index].IsAlive == true {
 				aliveCount.addValueXMut(1)
 			} else {
 				aliveCount.addValueYMut(1)
 			}
 		}
-
 	}
 
-	log.Println("aliveCount")
-	log.Println(aliveCount)
 	return aliveCount
-}
-func (c *Cell) update(w World) {
-	aliveDeath := c.getNeighbours(w)
-
-	log.Println("!@!@")
-	log.Println(c.WorldPosition)
-	log.Println(aliveDeath)
 }
 
 func (c Cell) draw(s tcell.Screen) {
@@ -120,8 +129,8 @@ func (c Cell) draw(s tcell.Screen) {
 	upperLeftCorner := corners[0]
 	lowerRightCorner := corners[1]
 
-	cellAliveStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorPurple)
-	cellDeadStyle := tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorYellow)
+	cellAliveStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
+	cellDeadStyle := tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorWhite)
 	if c.IsAlive {
 		drawBox(s, upperLeftCorner.X, upperLeftCorner.Y, lowerRightCorner.X, lowerRightCorner.Y, cellAliveStyle, "")
 	} else {
@@ -129,29 +138,35 @@ func (c Cell) draw(s tcell.Screen) {
 	}
 }
 
-// 12 x 12 size?
-const (
-	MAP_SIZE_X = 3
-	MAP_SIZE_Y = 3
-	MAP_SIZE   = MAP_SIZE_X * MAP_SIZE_Y
-)
-
-func Convert1d2(i int, max int) Pair {
-	return Pair{i % max, i / max}
+func Convert1d2d(i int, maxX int) Pair {
+	return Pair{i % maxX, i / maxX}
 }
-func Convert2d1d(i Pair) int {
-	return i.X*MAP_SIZE_X + i.Y
+func Convert2d1d(i Pair, maxX int) int {
+	r := i.Y*maxX + i.X
+	return r
 }
 
 type World struct {
-	Cells [MAP_SIZE]Cell
+	Cells   []Cell
+	MapSize Pair
 }
 
-func (w *World) init() {
-	for i := 0; i < MAP_SIZE; i++ {
-		w.Cells[i].WorldPosition = Convert1d2(i, MAP_SIZE_X)
+func (w *World) Convert1d2d(i int) Pair {
+	return Convert1d2d(i, w.MapSize.X)
+}
+func (w *World) Convert2d1d(i Pair) int {
+	return Convert2d1d(i, w.MapSize.X)
+}
+
+func (w *World) init(mapSize Pair) {
+	w.MapSize = mapSize
+	w.Cells = make([]Cell, w.MapSize.X*w.MapSize.Y)
+	for i := 0; i < w.MapSize.X*w.MapSize.Y; i++ {
+		w.Cells[i].WorldPosition = w.Convert1d2d(i)
+		if i%2 == 0 {
+			w.Cells[i].IsAlive = true
+		}
 	}
-	w.Cells[4].IsAlive = true
 }
 
 func worldToScreenPosition(pos Pair) [2]Pair {
@@ -172,9 +187,6 @@ func worldToScreenPosition(pos Pair) [2]Pair {
 
 func (w World) update(s tcell.Screen) {
 	w.draw(s)
-	for _, e := range w.Cells {
-		e.update(w)
-	}
 }
 func (w World) draw(s tcell.Screen) {
 	for _, e := range w.Cells {
@@ -213,49 +225,46 @@ func drawBox(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, text string)
 			s.SetContent(col, row, ' ', nil, style)
 		}
 	}
-
-	// Draw borders
-	for col := x1; col <= x2; col++ {
-		s.SetContent(col, y1, tcell.RuneHLine, nil, style)
-		s.SetContent(col, y2, tcell.RuneHLine, nil, style)
-	}
-	for row := y1 + 1; row < y2; row++ {
-		s.SetContent(x1, row, tcell.RuneVLine, nil, style)
-		s.SetContent(x2, row, tcell.RuneVLine, nil, style)
-	}
-
-	// Only draw corners if necessary
-	if y1 != y2 && x1 != x2 {
-		s.SetContent(x1, y1, tcell.RuneULCorner, nil, style)
-		s.SetContent(x2, y1, tcell.RuneURCorner, nil, style)
-		s.SetContent(x1, y2, tcell.RuneLLCorner, nil, style)
-		s.SetContent(x2, y2, tcell.RuneLRCorner, nil, style)
-	}
+	// // Draw borders
+	// for col := x1; col <= x2; col++ {
+	// 	s.SetContent(col, y1, tcell.RuneHLine, nil, style)
+	// 	s.SetContent(col, y2, tcell.RuneHLine, nil, style)
+	// }
+	// for row := y1 + 1; row < y2; row++ {
+	// 	s.SetContent(x1, row, tcell.RuneVLine, nil, style)
+	// 	s.SetContent(x2, row, tcell.RuneVLine, nil, style)
+	// }
+	//
+	// // Only draw corners if necessary
+	// if y1 != y2 && x1 != x2 {
+	// 	s.SetContent(x1, y1, tcell.RuneULCorner, nil, style)
+	// 	s.SetContent(x2, y1, tcell.RuneURCorner, nil, style)
+	// 	s.SetContent(x1, y2, tcell.RuneLLCorner, nil, style)
+	// 	s.SetContent(x2, y2, tcell.RuneLRCorner, nil, style)
+	// }
 
 	drawText(s, x1+1, y1+1, x2-1, y2-1, style, text)
 }
+func Run(s tcell.Screen, world World) {
+	for {
 
-func updateScreen(s tcell.Screen, world World) {
-	s.Clear()
-	w, h := s.Size()
-	boxStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorPurple)
-	drawBox(s, 1, 1, w-1, h-1, boxStyle, "Click and drag to draw a box")
-	// drawBox(s, 1, 1, 3, 2, boxStyle, "1")
-	// drawBox(s, 4, 1, 6, 2, boxStyle, "2")
-	// drawBox(s, 7, 1, 9, 2, boxStyle, "3")
-	//
-	// drawBox(s, 1, 3, 3, 4, boxStyle, "4")
-	// drawBox(s, 4, 3, 6, 4, boxStyle, "5")
-	// drawBox(s, 7, 3, 9, 4, boxStyle, "5")
-	world.update(s)
+		s.Clear()
+
+		r := Rule{}
+		world = r.modify(world)
+		world.update(s)
+		s.Show()
+
+		time.Sleep(40 * time.Millisecond)
+	}
 }
-func main() {
-	world := World{}
-	world.init()
-	defStyle := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
-	boxStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorPurple)
 
-	file, err := os.OpenFile("logs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+func main() {
+
+	world := World{}
+	world.init(Pair{20, 20})
+	defStyle := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
+	file, err := os.OpenFile("logs.txt", os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -270,9 +279,6 @@ func main() {
 		log.Fatalf("%+v", err)
 	}
 	s.SetStyle(defStyle)
-	s.EnableMouse()
-	s.EnablePaste()
-	s.Clear()
 
 	// Draw initial boxes
 
@@ -298,43 +304,20 @@ func main() {
 	// s.PostEvent(tcell.NewEventKey(tcell.KeyRune, rune('a'), 0))
 
 	// Event loop
-	ox, oy := -1, -1
-	for {
-		// Update screen
-		s.Show()
+	go Run(s, world)
 
-		// Poll event
+	for {
+
+		// // Poll event
 		ev := s.PollEvent()
 
 		// Process event
 		switch ev := ev.(type) {
-		case *tcell.EventResize:
-			s.Sync()
-			updateScreen(s, world)
 		case *tcell.EventKey:
 			if ev.Key() == tcell.KeyEscape || ev.Key() == tcell.KeyCtrlC {
 				return
-			} else if ev.Key() == tcell.KeyCtrlL {
-				s.Sync()
-			} else if ev.Rune() == 'C' || ev.Rune() == 'c' {
-				s.Clear()
-			}
-		case *tcell.EventMouse:
-			x, y := ev.Position()
-
-			switch ev.Buttons() {
-			case tcell.Button1, tcell.Button2:
-				if ox < 0 {
-					ox, oy = x, y // record location when click started
-				}
-
-			case tcell.ButtonNone:
-				if ox >= 0 {
-					label := fmt.Sprintf("%d,%d to %d,%d", ox, oy, x, y)
-					drawBox(s, ox, oy, x, y, boxStyle, label)
-					ox, oy = -1, -1
-				}
 			}
 		}
 	}
+
 }
